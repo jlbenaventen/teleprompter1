@@ -261,7 +261,6 @@
     <label><input type="checkbox" id="cameraMirror" checked> Espejar cámara</label>
     <button id="recordBtn">⏺ Grabar</button>
     <span id="recTimer" style="display:none; color:#ff5555; font-weight:600;">00:00</span>
-    <span id="convertStatus" style="display:none; color:#4fd1c5; font-weight:600;">⏳ Convirtiendo a MP4...</span>
 
     <label>Velocidad
       <input type="range" id="speed" min="1" max="10" step="0.5" value="3">
@@ -335,10 +334,7 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
   <div id="recIndicator"><span id="recDot"></span><span>REC <span id="recIndicatorTime">00:00</span></span></div>
 </div>
 
-<script type="module">
-import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
-import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
-
+<script>
 (function(){
   const scriptInput   = document.getElementById('scriptInput');
   const prompterText   = document.getElementById('prompterText');
@@ -410,7 +406,6 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
   // ---------- Grabación (cámara + micrófono, sin el texto superpuesto) ----------
   const recordBtn = document.getElementById('recordBtn');
   const recTimer  = document.getElementById('recTimer');
-  const convertStatus = document.getElementById('convertStatus');
   const recIndicator = document.getElementById('recIndicator');
   const recIndicatorTime = document.getElementById('recIndicatorTime');
   let micStream = null;
@@ -419,38 +414,6 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
   let recording = false;
   let recStartTime = null;
   let recTimerInterval = null;
-
-  // ---------- Conversión a MP4 (ffmpeg.wasm, corre 100% en el navegador) ----------
-  let ffmpegInstance = null;
-  let ffmpegLoadPromise = null;
-
-  async function getFFmpeg(){
-    if(ffmpegInstance) return ffmpegInstance;
-    if(ffmpegLoadPromise) return ffmpegLoadPromise;
-    ffmpegLoadPromise = (async () => {
-      const ffmpeg = new FFmpeg();
-      const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
-      const ffmpegPkgURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm';
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        classWorkerURL: await toBlobURL(`${ffmpegPkgURL}/worker.js`, 'text/javascript'),
-      });
-      ffmpegInstance = ffmpeg;
-      return ffmpeg;
-    })();
-    return ffmpegLoadPromise;
-  }
-
-  async function convertToMp4(webmBlob){
-    const ffmpeg = await getFFmpeg();
-    await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob));
-    await ffmpeg.exec(['-i', 'input.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', 'output.mp4']);
-    const data = await ffmpeg.readFile('output.mp4');
-    await ffmpeg.deleteFile('input.webm');
-    await ffmpeg.deleteFile('output.mp4');
-    return new Blob([data.buffer], { type: 'video/mp4' });
-  }
 
   function downloadBlob(blob, filename){
     const url = URL.createObjectURL(blob);
@@ -515,26 +478,11 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
     mediaRecorder.ondataavailable = (e) => {
       if(e.data && e.data.size > 0) recordedChunks.push(e.data);
     };
-    mediaRecorder.onstop = async () => {
+    mediaRecorder.onstop = () => {
       const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
       const ts = new Date().toISOString().replace(/[:.]/g,'-');
-      const alreadyMp4 = (mediaRecorder.mimeType || '').includes('mp4');
-
-      if(alreadyMp4){
-        downloadBlob(blob, `teleprompter-grabacion-${ts}.mp4`);
-      } else {
-        convertStatus.style.display = 'inline';
-        try{
-          const mp4Blob = await convertToMp4(blob);
-          downloadBlob(mp4Blob, `teleprompter-grabacion-${ts}.mp4`);
-        } catch(err){
-          console.error('Conversión a MP4 falló, se descarga en WEBM:', err);
-          alert('No se pudo convertir a MP4 (' + err.message + '). Se descargará en formato WEBM en su lugar.');
-          downloadBlob(blob, `teleprompter-grabacion-${ts}.webm`);
-        } finally {
-          convertStatus.style.display = 'none';
-        }
-      }
+      const ext = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
+      downloadBlob(blob, `teleprompter-grabacion-${ts}.${ext}`);
 
       if(micStream){
         micStream.getTracks().forEach(t => t.stop());
