@@ -66,6 +66,52 @@
     font-weight:600;
   }
   button.primary:hover{ filter:brightness(1.08); }
+  #recordBtn{
+    background:#7a1f1f;
+    border-color:#c0392b;
+    color:#fff;
+    font-weight:700;
+  }
+  #recordBtn:hover{ background:#8f2626; }
+  #recordBtn.recording{
+    background:#e53935;
+    border-color:#ff6b6b;
+    animation: recPulseBtn 1.2s ease-in-out infinite;
+  }
+  @keyframes recPulseBtn{
+    0%, 100%{ box-shadow: 0 0 0 0 rgba(229,57,53,0.6); }
+    50%{ box-shadow: 0 0 0 8px rgba(229,57,53,0); }
+  }
+  #recIndicator{
+    display:none;
+    position:fixed;
+    top:10px;
+    left:50%;
+    transform:translateX(-50%);
+    background:rgba(229,57,53,0.95);
+    color:#fff;
+    font-weight:700;
+    font-size:14px;
+    padding:6px 16px;
+    border-radius:20px;
+    z-index:30;
+    align-items:center;
+    gap:8px;
+    letter-spacing:0.5px;
+    box-shadow:0 2px 10px rgba(0,0,0,0.4);
+  }
+  #recIndicator.on{ display:flex; }
+  #recDot{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:#fff;
+    animation: recPulseDot 1s ease-in-out infinite;
+  }
+  @keyframes recPulseDot{
+    0%, 100%{ opacity:1; }
+    50%{ opacity:0.25; }
+  }
   #toggleControls{
     position:fixed;
     top:8px;
@@ -188,6 +234,7 @@
     <label><input type="checkbox" id="cameraMirror" checked> Espejar cámara</label>
     <button id="recordBtn">⏺ Grabar</button>
     <span id="recTimer" style="display:none; color:#ff5555; font-weight:600;">00:00</span>
+    <span id="convertStatus" style="display:none; color:#4fd1c5; font-weight:600;">⏳ Convirtiendo a MP4...</span>
 
     <label>Velocidad
       <input type="range" id="speed" min="1" max="10" step="0.5" value="3">
@@ -237,9 +284,13 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
   </div>
 
   <button id="toggleControls" title="Mostrar/ocultar controles (tecla C)">⚙</button>
+  <div id="recIndicator"><span id="recDot"></span><span>REC <span id="recIndicatorTime">00:00</span></span></div>
 </div>
 
-<script>
+<script type="module">
+import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
+import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
 (function(){
   const scriptInput   = document.getElementById('scriptInput');
   const prompterText   = document.getElementById('prompterText');
@@ -307,12 +358,56 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
   // ---------- Grabación (cámara + micrófono, sin el texto superpuesto) ----------
   const recordBtn = document.getElementById('recordBtn');
   const recTimer  = document.getElementById('recTimer');
+  const convertStatus = document.getElementById('convertStatus');
+  const recIndicator = document.getElementById('recIndicator');
+  const recIndicatorTime = document.getElementById('recIndicatorTime');
   let micStream = null;
   let mediaRecorder = null;
   let recordedChunks = [];
   let recording = false;
   let recStartTime = null;
   let recTimerInterval = null;
+
+  // ---------- Conversión a MP4 (ffmpeg.wasm, corre 100% en el navegador) ----------
+  let ffmpegInstance = null;
+  let ffmpegLoadPromise = null;
+
+  async function getFFmpeg(){
+    if(ffmpegInstance) return ffmpegInstance;
+    if(ffmpegLoadPromise) return ffmpegLoadPromise;
+    ffmpegLoadPromise = (async () => {
+      const ffmpeg = new FFmpeg();
+      const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      });
+      ffmpegInstance = ffmpeg;
+      return ffmpeg;
+    })();
+    return ffmpegLoadPromise;
+  }
+
+  async function convertToMp4(webmBlob){
+    const ffmpeg = await getFFmpeg();
+    await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob));
+    await ffmpeg.exec(['-i', 'input.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', 'output.mp4']);
+    const data = await ffmpeg.readFile('output.mp4');
+    await ffmpeg.deleteFile('input.webm');
+    await ffmpeg.deleteFile('output.mp4');
+    return new Blob([data.buffer], { type: 'video/mp4' });
+  }
+
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
 
   function pickMimeType(){
     const candidates = [
@@ -366,18 +461,27 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
     mediaRecorder.ondataavailable = (e) => {
       if(e.data && e.data.size > 0) recordedChunks.push(e.data);
     };
-    mediaRecorder.onstop = () => {
+    mediaRecorder.onstop = async () => {
       const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-      const ext = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const ts = new Date().toISOString().replace(/[:.]/g,'-');
-      a.href = url;
-      a.download = `teleprompter-grabacion-${ts}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const alreadyMp4 = (mediaRecorder.mimeType || '').includes('mp4');
+
+      if(alreadyMp4){
+        downloadBlob(blob, `teleprompter-grabacion-${ts}.mp4`);
+      } else {
+        convertStatus.style.display = 'inline';
+        try{
+          const mp4Blob = await convertToMp4(blob);
+          downloadBlob(mp4Blob, `teleprompter-grabacion-${ts}.mp4`);
+        } catch(err){
+          console.error('Conversión a MP4 falló, se descarga en WEBM:', err);
+          alert('No se pudo convertir a MP4 (' + err.message + '). Se descargará en formato WEBM en su lugar.');
+          downloadBlob(blob, `teleprompter-grabacion-${ts}.webm`);
+        } finally {
+          convertStatus.style.display = 'none';
+        }
+      }
+
       if(micStream){
         micStream.getTracks().forEach(t => t.stop());
         micStream = null;
@@ -387,11 +491,16 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
     mediaRecorder.start();
     recording = true;
     recordBtn.textContent = '⏹ Detener grabación';
+    recordBtn.classList.add('recording');
     recTimer.style.display = 'inline';
+    recIndicator.classList.add('on');
     recStartTime = Date.now();
     recTimer.textContent = '00:00';
+    recIndicatorTime.textContent = '00:00';
     recTimerInterval = setInterval(() => {
-      recTimer.textContent = formatTime((Date.now() - recStartTime)/1000);
+      const t = formatTime((Date.now() - recStartTime)/1000);
+      recTimer.textContent = t;
+      recIndicatorTime.textContent = t;
     }, 500);
   }
 
@@ -401,7 +510,9 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
     }
     recording = false;
     recordBtn.textContent = '⏺ Grabar';
+    recordBtn.classList.remove('recording');
     recTimer.style.display = 'none';
+    recIndicator.classList.remove('on');
     clearInterval(recTimerInterval);
   }
 
