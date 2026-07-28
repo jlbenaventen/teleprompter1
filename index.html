@@ -617,6 +617,10 @@ Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para c
     loadScript();
   });
 
+  // La primera vez que hace clic en el cuadro, selecciona todo el texto de ejemplo
+  // para que al escribir o pegar se reemplace en vez de mezclarse con "Bienvenido...".
+  scriptInput.addEventListener('focus', function(){ this.select(); }, { once: true });
+
   tipsBtn.addEventListener('click', () => {
     const collapsed = tipsPanel.classList.toggle('collapsed');
     tipsBtn.textContent = collapsed ? '💡 Consejos' : '✓ Ocultar consejos';
