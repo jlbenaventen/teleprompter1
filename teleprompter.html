@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Teleprompter</title>
+<style>
+  :root{
+    --bg: #000000;
+    --panel: rgba(20,20,20,0.85);
+    --accent: #4fd1c5;
+    --text: #ffffff;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%;
+    margin:0;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    overflow:hidden;
+  }
+  #app{
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ---------- Controls bar ---------- */
+  #controls{
+    flex-shrink:0;
+    background: var(--panel);
+    color:#eee;
+    padding:10px 14px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px 18px;
+    align-items:center;
+    font-size:13px;
+    border-bottom:1px solid #333;
+    z-index:10;
+  }
+  #controls.hidden{ display:none; }
+  #controls label{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    white-space:nowrap;
+  }
+  #controls input[type="range"]{
+    width:100px;
+    accent-color: var(--accent);
+  }
+  button{
+    background:#2a2a2a;
+    color:#fff;
+    border:1px solid #444;
+    border-radius:6px;
+    padding:7px 12px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  button:hover{ background:#383838; }
+  button.primary{
+    background: var(--accent);
+    color:#003330;
+    border-color: var(--accent);
+    font-weight:600;
+  }
+  button.primary:hover{ filter:brightness(1.08); }
+  #toggleControls{
+    position:fixed;
+    top:8px;
+    right:8px;
+    z-index:20;
+    opacity:0.55;
+  }
+  #toggleControls:hover{ opacity:1; }
+
+  /* ---------- Script editor ---------- */
+  #editorWrap{
+    flex-shrink:0;
+    background:#111;
+    border-bottom:1px solid #333;
+  }
+  #editorWrap.collapsed{ display:none; }
+  #scriptInput{
+    width:100%;
+    height:140px;
+    background:#0c0c0c;
+    color:#ddd;
+    border:none;
+    padding:12px 16px;
+    font-size:15px;
+    line-height:1.5;
+    resize:vertical;
+    outline:none;
+  }
+
+  /* ---------- Prompter view ---------- */
+  #stage{
+    flex:1;
+    position:relative;
+    overflow:hidden;
+    background: transparent;
+  }
+  #camera{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    object-position: center 25%;
+    background:#000;
+  }
+  #camera.mirror{
+    transform:scaleX(-1);
+  }
+  #cameraStatus{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#888;
+    font-size:16px;
+    text-align:center;
+    padding:20px;
+    pointer-events:none;
+  }
+  #opacityLayer{
+    position:absolute;
+    inset:0;
+    background:#000;
+    pointer-events:none;
+  }
+  #scrollArea{
+    position:absolute;
+    inset:0;
+    overflow:hidden;
+  }
+  #centerLine{
+    position:absolute;
+    left:0; right:0; top:50%;
+    height:2px;
+    background:rgba(79,209,197,0.5);
+    transform:translateY(-1px);
+    pointer-events:none;
+    display:none;
+  }
+  #centerLine.on{ display:block; }
+  #prompterText{
+    position:absolute;
+    top:100%;
+    left:0;
+    right:0;
+    margin:0 auto;
+    color: var(--text);
+    text-align:center;
+    font-size:48px;
+    line-height:1.5;
+    font-weight:600;
+    white-space:pre-wrap;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  }
+  #prompterText.mirror{
+    transform: scaleX(-1);
+  }
+  #placeholder{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#666;
+    font-size:20px;
+    text-align:center;
+    padding:20px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="controls">
+    <button id="playBtn" class="primary">▶ Play</button>
+    <button id="resetBtn">⟲ Reiniciar</button>
+    <button id="editBtn">✎ Editar texto</button>
+    <button id="cameraBtn">📷 Activar cámara</button>
+    <label><input type="checkbox" id="cameraMirror" checked> Espejar cámara</label>
+    <button id="recordBtn">⏺ Grabar</button>
+    <span id="recTimer" style="display:none; color:#ff5555; font-weight:600;">00:00</span>
+
+    <label>Velocidad
+      <input type="range" id="speed" min="1" max="10" step="0.5" value="3">
+      <span id="speedVal">3</span>
+    </label>
+
+    <label>Tamaño letra
+      <input type="range" id="fontSize" min="20" max="90" step="2" value="48">
+      <span id="fontVal">48</span>px
+    </label>
+
+    <label>Ancho de texto
+      <input type="range" id="textWidth" min="25" max="100" step="5" value="55">
+      <span id="textWidthVal">55</span>%
+    </label>
+
+    <label>Oscurecer cámara
+      <input type="range" id="opacity" min="0" max="100" step="5" value="0">
+      <span id="opacityVal">0</span>%
+    </label>
+
+    <label><input type="checkbox" id="mirrorToggle"> Modo espejo</label>
+    <label><input type="checkbox" id="centerToggle" checked> Línea guía</label>
+
+    <button id="fullscreenBtn">⛶ Pantalla completa</button>
+  </div>
+
+  <div id="editorWrap">
+    <textarea id="scriptInput" placeholder="Pega o escribe aquí tu guion...">Bienvenido a tu teleprompter.
+
+Pega o escribe tu guion en este cuadro de texto.
+
+Luego presiona "Editar texto" para ocultar este panel, ajusta velocidad, tamaño de letra y opacidad, y presiona Play.
+
+Usa la barra espaciadora para pausar/reanudar, y las flechas arriba/abajo para cambiar la velocidad mientras lees.</textarea>
+  </div>
+
+  <div id="stage">
+    <video id="camera" autoplay playsinline muted class="mirror"></video>
+    <div id="cameraStatus">Presiona "Activar cámara" arriba para verte mientras lees.</div>
+    <div id="opacityLayer"></div>
+    <div id="centerLine" class="on"></div>
+    <div id="scrollArea">
+      <div id="prompterText"></div>
+    </div>
+    <div id="placeholder"></div>
+  </div>
+
+  <button id="toggleControls" title="Mostrar/ocultar controles (tecla C)">⚙</button>
+</div>
+
+<script>
+(function(){
+  const scriptInput   = document.getElementById('scriptInput');
+  const prompterText   = document.getElementById('prompterText');
+  const editorWrap     = document.getElementById('editorWrap');
+  const controls       = document.getElementById('controls');
+  const stage          = document.getElementById('stage');
+  const opacityLayer   = document.getElementById('opacityLayer');
+  const centerLine     = document.getElementById('centerLine');
+  const placeholder    = document.getElementById('placeholder');
+
+  const playBtn        = document.getElementById('playBtn');
+  const resetBtn        = document.getElementById('resetBtn');
+  const editBtn         = document.getElementById('editBtn');
+  const speedInput      = document.getElementById('speed');
+  const speedVal        = document.getElementById('speedVal');
+  const fontSizeInput   = document.getElementById('fontSize');
+  const fontVal         = document.getElementById('fontVal');
+  const textWidthInput  = document.getElementById('textWidth');
+  const textWidthVal    = document.getElementById('textWidthVal');
+  const opacityInput    = document.getElementById('opacity');
+  const opacityVal      = document.getElementById('opacityVal');
+  const mirrorToggle    = document.getElementById('mirrorToggle');
+  const centerToggle    = document.getElementById('centerToggle');
+  const fullscreenBtn   = document.getElementById('fullscreenBtn');
+  const toggleControlsBtn = document.getElementById('toggleControls');
+
+  const cameraEl      = document.getElementById('camera');
+  const cameraBtn     = document.getElementById('cameraBtn');
+  const cameraStatus  = document.getElementById('cameraStatus');
+  const cameraMirror  = document.getElementById('cameraMirror');
+  let cameraStream = null;
+
+  async function startCamera(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      cameraStatus.style.display = 'flex';
+      cameraStatus.textContent = 'Este navegador no permite acceso a cámara aquí (prueba con Chrome o Edge, y evita abrir el archivo desde una carpeta de red).';
+      return;
+    }
+    try{
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+      cameraEl.srcObject = cameraStream;
+      cameraStatus.style.display = 'none';
+      cameraBtn.textContent = '📷 Cámara activa';
+    } catch(err){
+      cameraStatus.style.display = 'flex';
+      cameraStatus.textContent = 'No se pudo acceder a la cámara (' + err.message + '). Revisa los permisos de cámara del navegador para este archivo/sitio.';
+    }
+  }
+
+  cameraBtn.addEventListener('click', startCamera);
+
+  cameraMirror.addEventListener('change', () => {
+    cameraEl.classList.toggle('mirror', cameraMirror.checked);
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if(cameraStream){
+      cameraStream.getTracks().forEach(t => t.stop());
+    }
+    if(micStream){
+      micStream.getTracks().forEach(t => t.stop());
+    }
+  });
+
+  // ---------- Grabación (cámara + micrófono, sin el texto superpuesto) ----------
+  const recordBtn = document.getElementById('recordBtn');
+  const recTimer  = document.getElementById('recTimer');
+  let micStream = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recording = false;
+  let recStartTime = null;
+  let recTimerInterval = null;
+
+  function pickMimeType(){
+    const candidates = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4'
+    ];
+    for(const c of candidates){
+      if(window.MediaRecorder && MediaRecorder.isTypeSupported(c)) return c;
+    }
+    return '';
+  }
+
+  function formatTime(sec){
+    const m = Math.floor(sec/60).toString().padStart(2,'0');
+    const s = Math.floor(sec%60).toString().padStart(2,'0');
+    return m + ':' + s;
+  }
+
+  async function startRecording(){
+    if(!cameraStream){
+      alert('Primero activa la cámara con el botón "Activar cámara".');
+      return;
+    }
+    if(!window.MediaRecorder){
+      alert('Este navegador no soporta grabación de video (MediaRecorder). Prueba con Chrome o Edge.');
+      return;
+    }
+    try{
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch(err){
+      alert('No se pudo acceder al micrófono (' + err.message + '). No se puede grabar sin audio.');
+      return;
+    }
+
+    const combined = new MediaStream([
+      ...cameraStream.getVideoTracks(),
+      ...micStream.getAudioTracks()
+    ]);
+
+    const mimeType = pickMimeType();
+    recordedChunks = [];
+    try{
+      mediaRecorder = mimeType ? new MediaRecorder(combined, { mimeType }) : new MediaRecorder(combined);
+    } catch(err){
+      alert('No se pudo iniciar la grabación: ' + err.message);
+      return;
+    }
+
+    mediaRecorder.ondataavailable = (e) => {
+      if(e.data && e.data.size > 0) recordedChunks.push(e.data);
+    };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+      const ext = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      a.href = url;
+      a.download = `teleprompter-grabacion-${ts}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      if(micStream){
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+    };
+
+    mediaRecorder.start();
+    recording = true;
+    recordBtn.textContent = '⏹ Detener grabación';
+    recTimer.style.display = 'inline';
+    recStartTime = Date.now();
+    recTimer.textContent = '00:00';
+    recTimerInterval = setInterval(() => {
+      recTimer.textContent = formatTime((Date.now() - recStartTime)/1000);
+    }, 500);
+  }
+
+  function stopRecording(){
+    if(mediaRecorder && recording){
+      mediaRecorder.stop();
+    }
+    recording = false;
+    recordBtn.textContent = '⏺ Grabar';
+    recTimer.style.display = 'none';
+    clearInterval(recTimerInterval);
+  }
+
+  recordBtn.addEventListener('click', () => {
+    if(recording) stopRecording(); else startRecording();
+  });
+
+  let playing = false;
+  let posY = 0; // px scrolled (translateY negative applied)
+  let rafId = null;
+  let lastTime = null;
+
+  function loadScript(){
+    const val = scriptInput.value.trim();
+    prompterText.textContent = val;
+    placeholder.style.display = val ? 'none' : 'flex';
+    placeholder.textContent = 'Escribe tu guion arriba y presiona "Editar texto" para ocultarlo.';
+  }
+
+  function resetScroll(){
+    posY = 0;
+    prompterText.style.transform = (mirrorToggle.checked ? 'scaleX(-1) ' : '') + 'translateY(0px)';
+    // fix: translateY must apply before mirror flip visually; use wrapper transform order carefully
+    applyTransform();
+  }
+
+  function applyTransform(){
+    const stageH = stage.clientHeight;
+    // move text upward by posY from starting position (top:100%)
+    const translate = `translateY(-${posY}px)`;
+    if(mirrorToggle.checked){
+      prompterText.style.transform = `scaleX(-1) ${translate}`;
+    } else {
+      prompterText.style.transform = translate;
+    }
+  }
+
+  function tick(timestamp){
+    if(!playing) return;
+    if(lastTime === null) lastTime = timestamp;
+    const dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    const speed = parseFloat(speedInput.value); // px per second base multiplier
+    posY += speed * 40 * dt; // scale factor for reasonable speed range
+
+    applyTransform();
+
+    // stop automatically once fully scrolled past
+    const totalScroll = prompterText.scrollHeight + stage.clientHeight;
+    if(posY >= totalScroll){
+      playing = false;
+      updatePlayButton();
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function play(){
+    if(!prompterText.textContent.trim()){
+      alert('Escribe o pega tu guion antes de iniciar.');
+      return;
+    }
+    playing = true;
+    lastTime = null;
+    updatePlayButton();
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function pause(){
+    playing = false;
+    updatePlayButton();
+    if(rafId) cancelAnimationFrame(rafId);
+  }
+
+  function updatePlayButton(){
+    playBtn.textContent = playing ? '⏸ Pausa' : '▶ Play';
+  }
+
+  playBtn.addEventListener('click', () => {
+    if(playing) pause(); else play();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    pause();
+    resetScroll();
+  });
+
+  editBtn.addEventListener('click', () => {
+    const collapsed = editorWrap.classList.toggle('collapsed');
+    editBtn.textContent = collapsed ? '✎ Editar texto' : '✓ Listo';
+    if(collapsed){
+      loadScript();
+      resetScroll();
+    }
+  });
+
+  scriptInput.addEventListener('input', () => {
+    loadScript();
+  });
+
+  speedInput.addEventListener('input', () => {
+    speedVal.textContent = speedInput.value;
+  });
+
+  fontSizeInput.addEventListener('input', () => {
+    prompterText.style.fontSize = fontSizeInput.value + 'px';
+    fontVal.textContent = fontSizeInput.value;
+  });
+
+  function applyTextWidth(){
+    const w = textWidthInput.value;
+    textWidthVal.textContent = w;
+    prompterText.style.maxWidth = w + '%';
+  }
+  textWidthInput.addEventListener('input', applyTextWidth);
+
+  opacityInput.addEventListener('input', () => {
+    const v = opacityInput.value;
+    opacityVal.textContent = v;
+    opacityLayer.style.background = `rgba(0,0,0,${v/100})`;
+  });
+
+  mirrorToggle.addEventListener('change', applyTransform);
+
+  centerToggle.addEventListener('change', () => {
+    centerLine.classList.toggle('on', centerToggle.checked);
+  });
+
+  fullscreenBtn.addEventListener('click', () => {
+    if(!document.fullscreenElement){
+      document.documentElement.requestFullscreen().catch(()=>{});
+    } else {
+      document.exitFullscreen();
+    }
+  });
+
+  toggleControlsBtn.addEventListener('click', () => {
+    controls.classList.toggle('hidden');
+    editorWrap.classList.add('collapsed');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if(e.target.tagName === 'TEXTAREA') return;
+    if(e.code === 'Space'){
+      e.preventDefault();
+      if(playing) pause(); else play();
+    } else if(e.code === 'ArrowUp'){
+      e.preventDefault();
+      speedInput.value = Math.min(10, parseFloat(speedInput.value) + 0.5);
+      speedVal.textContent = speedInput.value;
+    } else if(e.code === 'ArrowDown'){
+      e.preventDefault();
+      speedInput.value = Math.max(1, parseFloat(speedInput.value) - 0.5);
+      speedVal.textContent = speedInput.value;
+    } else if(e.key.toLowerCase() === 'c'){
+      controls.classList.toggle('hidden');
+    } else if(e.key.toLowerCase() === 'r'){
+      pause();
+      resetScroll();
+    }
+  });
+
+  // init
+  loadScript();
+  prompterText.style.fontSize = fontSizeInput.value + 'px';
+  applyTextWidth();
+  opacityLayer.style.background = `rgba(0,0,0,0)`;
+  resetScroll();
+})();
+</script>
+</body>
+</html>
