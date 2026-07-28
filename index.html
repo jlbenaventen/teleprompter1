@@ -85,7 +85,7 @@
   #recIndicator{
     display:none;
     position:fixed;
-    top:10px;
+    bottom:20px;
     left:50%;
     transform:translateX(-50%);
     background:rgba(229,57,53,0.95);
@@ -111,6 +111,32 @@
   @keyframes recPulseDot{
     0%, 100%{ opacity:1; }
     50%{ opacity:0.25; }
+  }
+  /* ---------- Panel de tips de comunicación ---------- */
+  #tipsPanel{
+    flex-shrink:0;
+    background:#132420;
+    border-bottom:1px solid #2a4a42;
+    color:#dfffee;
+    padding:14px 20px;
+    font-size:14px;
+    line-height:1.5;
+  }
+  #tipsPanel.collapsed{ display:none; }
+  #tipsPanel h3{
+    margin:0 0 8px 0;
+    font-size:14px;
+    color: var(--accent);
+  }
+  #tipsPanel ul{
+    margin:0;
+    padding-left:18px;
+    columns: 2;
+    column-gap:32px;
+  }
+  #tipsPanel li{
+    margin-bottom:6px;
+    break-inside: avoid;
   }
   #toggleControls{
     position:fixed;
@@ -230,6 +256,7 @@
     <button id="playBtn" class="primary">▶ Play</button>
     <button id="resetBtn">⟲ Reiniciar</button>
     <button id="editBtn">✎ Editar texto</button>
+    <button id="tipsBtn">💡 Consejos</button>
     <button id="cameraBtn">📷 Activar cámara</button>
     <label><input type="checkbox" id="cameraMirror" checked> Espejar cámara</label>
     <button id="recordBtn">⏺ Grabar</button>
@@ -260,6 +287,22 @@
     <label><input type="checkbox" id="centerToggle" checked> Línea guía</label>
 
     <button id="fullscreenBtn">⛶ Pantalla completa</button>
+  </div>
+
+  <div id="tipsPanel" class="collapsed">
+    <h3>Consejos para que no suene "leído"</h3>
+    <ul>
+      <li>Habla como si le explicaras esto a un amigo, no como si leyeras un texto.</li>
+      <li>Escribe el guion como hablas: frases cortas, lenguaje natural, evita oraciones largas.</li>
+      <li>Mira al lente de la cámara (donde está el texto), no muevas los ojos por toda la pantalla.</li>
+      <li>Deja pausas breves donde pondrías una coma o un punto, no hables todo de corrido.</li>
+      <li>Varía el ritmo y el tono; evita sonar plano o monótono.</li>
+      <li>Practica el guion en voz alta 1-2 veces antes de grabar.</li>
+      <li>Si te trabas, detente, respira y retoma la frase — se puede cortar en edición después.</li>
+      <li>Usa gestos naturales con las manos y algo de expresión facial.</li>
+      <li>Lee un poco más lento de lo que sientas natural; en cámara casi siempre suena mejor así.</li>
+      <li>Sonríe un poco al hablar, se nota en el tono de voz aunque no se vea forzado.</li>
+    </ul>
   </div>
 
   <div id="editorWrap">
@@ -304,6 +347,8 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
   const playBtn        = document.getElementById('playBtn');
   const resetBtn        = document.getElementById('resetBtn');
   const editBtn         = document.getElementById('editBtn');
+  const tipsBtn         = document.getElementById('tipsBtn');
+  const tipsPanel       = document.getElementById('tipsPanel');
   const speedInput      = document.getElementById('speed');
   const speedVal        = document.getElementById('speedVal');
   const fontSizeInput   = document.getElementById('fontSize');
@@ -616,6 +661,11 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
 
   scriptInput.addEventListener('input', () => {
     loadScript();
+  });
+
+  tipsBtn.addEventListener('click', () => {
+    const collapsed = tipsPanel.classList.toggle('collapsed');
+    tipsBtn.textContent = collapsed ? '💡 Consejos' : '✓ Ocultar consejos';
   });
 
   speedInput.addEventListener('input', () => {
