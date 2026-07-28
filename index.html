@@ -378,9 +378,11 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
     ffmpegLoadPromise = (async () => {
       const ffmpeg = new FFmpeg();
       const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+      const ffmpegPkgURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm';
       await ffmpeg.load({
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        classWorkerURL: await toBlobURL(`${ffmpegPkgURL}/worker.js`, 'text/javascript'),
       });
       ffmpegInstance = ffmpeg;
       return ffmpeg;
