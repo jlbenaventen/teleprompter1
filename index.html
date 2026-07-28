@@ -278,6 +278,11 @@
       <span id="textWidthVal">55</span>%
     </label>
 
+    <label>Posición de lectura
+      <input type="range" id="readPos" min="5" max="80" step="5" value="20">
+      <span id="readPosVal">20</span>%
+    </label>
+
     <label>Oscurecer cámara
       <input type="range" id="opacity" min="0" max="100" step="5" value="0">
       <span id="opacityVal">0</span>%
@@ -294,7 +299,7 @@
     <ul>
       <li>Habla como si le explicaras esto a un amigo, no como si leyeras un texto.</li>
       <li>Escribe el guion como hablas: frases cortas, lenguaje natural, evita oraciones largas.</li>
-      <li>Mira al lente de la cámara (donde está el texto), no muevas los ojos por toda la pantalla.</li>
+      <li>La cámara del laptop está arriba de la pantalla, así que perfectamente alineada con el texto no va a quedar (eso solo se logra con un teleprompter físico con vidrio). Sube la "Posición de lectura" para que el texto quede lo más arriba posible, cerca del lente, y mira ahí en vez de al centro de la pantalla.</li>
       <li>Deja pausas breves donde pondrías una coma o un punto, no hables todo de corrido.</li>
       <li>Varía el ritmo y el tono; evita sonar plano o monótono.</li>
       <li>Practica el guion en voz alta 1-2 veces antes de grabar.</li>
@@ -355,6 +360,8 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
   const fontVal         = document.getElementById('fontVal');
   const textWidthInput  = document.getElementById('textWidth');
   const textWidthVal    = document.getElementById('textWidthVal');
+  const readPosInput    = document.getElementById('readPos');
+  const readPosVal      = document.getElementById('readPosVal');
   const opacityInput    = document.getElementById('opacity');
   const opacityVal      = document.getElementById('opacityVal');
   const mirrorToggle    = document.getElementById('mirrorToggle');
@@ -684,6 +691,13 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
   }
   textWidthInput.addEventListener('input', applyTextWidth);
 
+  function applyReadPos(){
+    const v = readPosInput.value;
+    readPosVal.textContent = v;
+    centerLine.style.top = v + '%';
+  }
+  readPosInput.addEventListener('input', applyReadPos);
+
   opacityInput.addEventListener('input', () => {
     const v = opacityInput.value;
     opacityVal.textContent = v;
@@ -734,6 +748,7 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
   loadScript();
   prompterText.style.fontSize = fontSizeInput.value + 'px';
   applyTextWidth();
+  applyReadPos();
   opacityLayer.style.background = `rgba(0,0,0,0)`;
   resetScroll();
 })();
