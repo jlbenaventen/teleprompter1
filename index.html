@@ -610,10 +610,9 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
     const dt = (timestamp - lastTime) / 1000;
     lastTime = timestamp;
 
-    // Reescalado: el valor 6 del slider ahora produce la velocidad que antes daba el 10
-    const SPEED_SCALE = 10 / 6;
-    const speed = parseFloat(speedInput.value) * SPEED_SCALE;
-    posY += speed * 40 * dt; // scale factor for reasonable speed range
+    // Velocidad reducida en general (el ajuste anterior la había dejado más rápida, no más lenta)
+    const speed = parseFloat(speedInput.value);
+    posY += speed * 12 * dt; // px/seg por unidad de velocidad
 
     applyTransform();
 
